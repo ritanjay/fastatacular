@@ -7,6 +7,7 @@ All notable changes to this project will be documented in this file.
 ### Fixed
 
 - `from_records` accepts records without `raw_header` where the identifier is a bare accession (NCBI, UniRef, Ensembl, RCSB entity) and the `accession` column matches the identifier, rather than raising a conflict error (#59).
+- `from_records` given a pandas or polars `DataFrame` now raises `FastaWriteError` with a hint naming the conversion (`df.to_dict("records")` or `df.iter_rows(named=True)`) instead of complaining that a column name is not a mapping. Error messages quote at most a short excerpt of a bad value (#64).
 
 ### Documentation
 
