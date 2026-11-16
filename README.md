@@ -354,6 +354,10 @@ assert entries == from_records(polars_frame.to_dicts())
 print(entries[0].identifier)
 ```
 
+`from_records` takes records, not a frame: pass `df.to_dict("records")` for pandas or
+`df.iter_rows(named=True)` for polars. Passing the `DataFrame` itself raises
+`FastaWriteError` whose hint names that conversion.
+
 ## Error handling
 
 Parse errors raise `FastaParseError`:
