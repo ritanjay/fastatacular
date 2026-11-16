@@ -321,3 +321,42 @@ def test_from_records_pandas_round_trip() -> None:
     assert from_records(df.to_dict("records")) == entries
     df = df.convert_dtypes()  # pandas.NA and nullable Int64
     assert from_records(df.to_dict("records")) == entries
+
+
+def test_from_records_pandas_frame_hint() -> None:
+    pd = pytest.importorskip("pandas")
+    df = pd.DataFrame(to_records(io.StringIO(ROUND_TRIP)))
+    with pytest.raises(FastaWriteError, match="pandas DataFrame") as info:
+        from_records(df)
+    assert info.value.hint is not None
+    assert 'df.to_dict("records")' in info.value.hint
+    assert len(str(info.value)) < 200
+
+
+def test_from_records_polars_frame_hint() -> None:
+    pl = pytest.importorskip("polars")
+    df = pl.DataFrame(to_records(io.StringIO(ROUND_TRIP)))
+    with pytest.raises(FastaWriteError, match="polars DataFrame") as info:
+        from_records(df)
+    assert info.value.hint is not None
+    assert "df.iter_rows(named=True)" in info.value.hint
+    assert len(str(info.value)) < 200
+    assert from_records(df.iter_rows(named=True)) == read_fasta(io.StringIO(ROUND_TRIP))
+
+
+def test_from_records_non_mapping_repr_is_capped() -> None:
+    pl = pytest.importorskip("polars")
+    series = pl.Series("identifier", [f"id{i}" for i in range(500)])
+    with pytest.raises(FastaWriteError, match="the record must be a mapping") as info:
+        from_records([series])
+    assert info.value.index == 0
+    assert len(str(info.value)) < 150
+    assert "..." in str(info.value)
+    with pytest.raises(FastaWriteError) as info:
+        from_records(["x" * 5000])
+    assert len(str(info.value)) < 150
+
+
+def test_from_records_list_of_dicts_unchanged() -> None:
+    [entry] = from_records([{"identifier": "a", "sequence": "MK"}])
+    assert (entry.identifier, entry.sequence) == ("a", "MK")
