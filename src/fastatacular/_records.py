@@ -112,14 +112,42 @@ def _absent(value: object) -> bool:
         return True
 
 
-def _error(message: str, index: int, hint: str | None = None) -> Exception:
+def _error(message: str, index: int | None, hint: str | None = None) -> Exception:
     from fastatacular.errors import FastaWriteError
 
     return FastaWriteError(message, index=index, hint=hint)
 
 
+_REPR_LIMIT = 60
+
+
+def _short(value: object) -> str:
+    """``repr(value)`` cut to a short single-line excerpt, so a Series or frame never floods a message."""
+    text = " ".join(repr(value).split())
+    return text if len(text) <= _REPR_LIMIT else f"{text[: _REPR_LIMIT - 3]}..."
+
+
 def _bad(index: int, key: str, value: object, what: str) -> Exception:
-    return _error(f"{key} must be {what}, got {value!r}", index)
+    return _error(f"{key} must be {what}, got {_short(value)}", index)
+
+
+# Conversion that turns each data-frame library's frame into the records `from_records` takes.
+_FRAME_HINTS = {
+    "pandas": 'from_records(df.to_dict("records"))',
+    "polars": "from_records(df.iter_rows(named=True))",
+}
+
+
+def _frame_library(obj: object) -> str | None:
+    """``"pandas"`` or ``"polars"`` when ``obj`` is a DataFrame of that library, else ``None``.
+
+    Looks at the class only, so neither library is imported here.
+    """
+    for cls in type(obj).__mro__:
+        library = cls.__module__.partition(".")[0]
+        if cls.__name__ == "DataFrame" and library in _FRAME_HINTS:
+            return library
+    return None
 
 
 def _as_int(value: object, index: int, key: str) -> int:
@@ -527,10 +555,19 @@ def from_records(records: Iterable[Mapping[str, object]]) -> list[SequenceEntry]
     a dict. A missing ``sequence`` gives ``""``. The returned entries are what reading the
     written FASTA gives back.
 
+    Passing a pandas or polars ``DataFrame`` itself raises :class:`FastaWriteError` with a
+    ``hint`` naming the conversion (``df.to_dict("records")`` or ``df.iter_rows(named=True)``).
+
     Raises:
         FastaWriteError: A bad value (non-integer ``pe``, no identifier, text that would
             not read back as written, ...), or an identifier and its parts, or a
             description and the structured columns, that were both set and disagree;
             ``index`` is the record's position.
     """
+    if (library := _frame_library(records)) is not None:
+        raise _error(
+            f"from_records takes records (mappings), not a {library} DataFrame; iterating a frame does not give rows",
+            None,
+            f"Convert the frame first: {_FRAME_HINTS[library]}",
+        )
     return [_record_entry(record, i) for i, record in enumerate(records)]
